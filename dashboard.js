@@ -53,7 +53,7 @@
     fillMonthSelect($('#sms-meta-month'),metaRows.map(row=>row.m));
     fillMonthSelect($('#sms-consumption-month'),consumptionRows.map(row=>row.m));
     fillMonthSelect($('#sms-budget-month'),budgetRows.filter(row=>row.meta.a!==null||row.lap.a!==null).map(row=>row.m));
-    $('#sms-data-updated').textContent='上次讀取 '+new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})+'｜每 5 分鐘更新';
+    $('#sms-data-updated').textContent='更新完成 '+new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'})+'｜每 5 分鐘更新';
     updateNew();updateMeta();updateBudget();updateConsumption();
     authWall.hidden=true;root.hidden=false;
   }
@@ -63,13 +63,19 @@
     busy=true;
     const version=++requestVersion;
     $('#sms-refresh').disabled=true;authButton.disabled=true;
+    $('#sms-refresh').textContent='更新中…';
+    $('#sms-data-updated').textContent='更新中，正在讀取 Google Sheet…';
     setAuthStatus('正在讀取 Google Sheet…');
     try {
       if(await fetchSheetData(sessionToken,version)) renderPrivateDashboard();
     } catch(error) {
-      if(version===requestVersion){signOut();setAuthStatus('讀取未完成：'+error.message,true);}
+      if(version===requestVersion){
+        const reason=error.name==='TimeoutError'?'Google Sheet 回應逾時，請稍後重新登入再試。':
+          /Failed to fetch|NetworkError|Load failed/i.test(error.message)?'無法連上 Google Sheet，請確認網路後重新登入再試。':error.message;
+        signOut();setAuthStatus('更新失敗：'+reason,true);
+      }
     } finally {
-      busy=false;$('#sms-refresh').disabled=false;authButton.disabled=!tokenClient;
+      busy=false;$('#sms-refresh').disabled=false;$('#sms-refresh').textContent='更新資料';authButton.disabled=!tokenClient;
     }
   }
   function initializePrivateDashboard() {

@@ -86,10 +86,16 @@ test('UI login, refresh, four panels, consumption filters and logout',async()=>{
   root.querySelectorAll=s=>s.includes('[id^=')?[...elements.values()].filter(e=>/^sms-(new|meta|budget|consumption)-|sms-store-progress/.test(e.id)):s.includes('sms-tab')?tabs:panels;
   for(const view of ['new','consumption','meta','budget']){const t=el('tab-'+view);t.dataset.view=view;tabs.push(t);const p=el('panel-'+view);p.dataset.panel=view;panels.push(p);}
   for(const [id,value] of [['new-mode','cumulative'],['new-store','all'],['new-month',''],['meta-store','all'],['meta-month',''],['budget-type','all'],['budget-month',''],['consumption-mode','cumulative'],['consumption-cohort','new'],['consumption-store','all'],['consumption-month','']]) el('sms-'+id,'SELECT',value);
-  let oauth,reads=0;
+  let oauth,reads=0,fetchGate=null,failNext=false,nextBudget=120;
   const google={accounts:{oauth2:{initTokenClient(opts){oauth=opts;return {requestAccessToken(){}};}}}};
   const window={SMSData:data,SMS_CONFIG:{sheetId:'synthetic',googleClientId:'synthetic'},google,setInterval:fn=>{intervals.push(fn);return intervals.length;},clearInterval(){},setTimeout(){return 1;},clearTimeout(){},addEventListener(){}};
-  const fetch=async()=>{reads++;return {ok:true,json:async()=>({valueRanges:ranges(fixtures())})};};
+  const fetch=async()=>{
+    reads++;
+    if(fetchGate) await fetchGate;
+    if(failNext){failNext=false;throw new TypeError('Failed to fetch');}
+    const raw=fixtures();raw[1].forEach(row=>row['Meta預算']=nextBudget);
+    return {ok:true,json:async()=>({valueRanges:ranges(raw)})};
+  };
   vm.runInNewContext(fs.readFileSync(__dirname+'/dashboard.js','utf8'),{window,document:doc,google,fetch,AbortSignal,Date,console});
   assert.equal(root.hidden,true);assert.equal(reads,0);
   intervals[0]();oauth.callback({access_token:'synthetic-token',expires_in:3600});
@@ -109,7 +115,31 @@ test('UI login, refresh, four panels, consumption filters and logout',async()=>{
   elements.get('#sms-new-mode').value='monthly';elements.get('#sms-new-store').value='ty';
   elements.get('#sms-new-mode').events.change();
   assert.match(elements.get('#sms-new-actual').html,/2</);
+  let releaseFetch;
+  fetchGate=new Promise(resolve=>{releaseFetch=resolve;});nextBudget=150;
+  const refreshing=elements.get('#sms-refresh').events.click();
+  assert.equal(reads,2);
+  assert.equal(elements.get('#sms-refresh').disabled,true);
+  assert.equal(elements.get('#sms-refresh').textContent,'更新中…');
+  assert.match(elements.get('#sms-data-updated').textContent,/更新中/);
   await elements.get('#sms-refresh').events.click();assert.equal(reads,2);
+  releaseFetch();await refreshing;fetchGate=null;
+  assert.equal(elements.get('#sms-refresh').disabled,false);
+  assert.equal(elements.get('#sms-refresh').textContent,'更新資料');
+  assert.match(elements.get('#sms-data-updated').textContent,/更新完成.*\d+:\d+:\d+/);
+  assert.match(elements.get('#sms-meta-table').html,/<td>300<\/td>/);
+  assert.match(elements.get('#sms-budget-total').html,/7200</);
+  assert.equal(elements.get('#sms-new-mode').value,'monthly');
+  assert.equal(elements.get('#sms-new-store').value,'ty');
+  failNext=true;await elements.get('#sms-refresh').events.click();
+  assert.equal(reads,3);assert.equal(root.hidden,true);
+  assert.match(elements.get('#sms-auth-status').textContent,/更新失敗：無法連上 Google Sheet/);
+  assert.equal(elements.get('#sms-refresh').disabled,false);
+  assert.equal(elements.get('#sms-refresh').textContent,'更新資料');
+  assert.equal(elements.get('#sms-consumption-amount').html,'');
+  oauth.callback({access_token:'synthetic-token',expires_in:3600});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(root.hidden,false);assert.equal(reads,4);
   elements.get('#sms-signout').events.click();
   assert.equal(root.hidden,true);assert.equal(elements.get('#sms-new-actual').html,'');
   assert.equal(elements.get('#sms-consumption-amount').html,'');assert.equal(elements.get('#sms-consumption-total').html,'');

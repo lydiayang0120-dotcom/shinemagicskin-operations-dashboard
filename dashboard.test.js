@@ -13,7 +13,14 @@ function fixtures() {
     }
     for(const platform of ['Meta','LAP']) budgetRows.push({'月份':data.months[m],'品牌代碼':'MS','年度歸屬':2026,'年度月序':m+1,'廣告平台':platform,'預算金額':300,'實際花費':m<2?(platform==='Meta'?200:10):null,'實際花費來源':'測試資料','填寫狀態':m<2?'已填':'待補'});
   }
-  return [newRows,metaRows,budgetRows];
+  const overview=[],detail=[];
+  for(let m=0;m<2;m++) {
+    overview.push({'月份':data.months[m],'品牌代碼':'MS','客群':'新客','到店數':6,'消費數':3,'消費金額':700});
+    overview.push({'月份':data.months[m],'品牌代碼':'MS','客群':'舊客','到店數':m,'消費數':m,'消費金額':m*50});
+    for(const [name,arrivals,count,amount] of [['桃園愛美肌',2,1,100],['江翠愛美肌',4,2,600]]) detail.push({'月份':data.months[m],'品牌代碼':'MS','客群':'新客','統計基準':'依預約日期','預約店':name,'來源代碼':1,'到店數':arrivals,'消費數':count,'消費金額':amount});
+    if(m) detail.push({'月份':data.months[m],'品牌代碼':'MS','客群':'舊客','統計基準':'依預約日期','預約店':'江翠愛美肌','來源代碼':1,'到店數':1,'消費數':1,'消費金額':50});
+  }
+  return [newRows,metaRows,budgetRows,overview,detail];
 }
 const ranges=raw=>raw.map(rows=>({values:table(rows)}));
 test('fiscal year, confirmed months and message-cost CPA',()=>{
@@ -65,7 +72,7 @@ test('anonymous HTML is data-free and JS has no persistent credential store',()=
   assert.match(js,/cache:'no-store'/);
   new vm.Script(js);
 });
-test('UI login, refresh, all three panels, single-store month and logout',async()=>{
+test('UI login, refresh, four panels, consumption filters and logout',async()=>{
   const elements=new Map(),intervals=[],tabs=[],panels=[];
   function el(id,tag='DIV',value='') {
     const e={id,tagName:tag,value,hidden:false,dataset:{},events:{},textContent:'',disabled:false,html:'',
@@ -76,9 +83,9 @@ test('UI login, refresh, all three panels, single-store month and logout',async(
   const root=el('sms-dashboard-web');root.hidden=true;
   const doc={hidden:false,getElementById:id=>elements.get('#'+id)||el(id)};
   root.querySelector=s=>elements.get(s)||el(s.slice(1));
-  root.querySelectorAll=s=>s.includes('[id^=')?[...elements.values()].filter(e=>/^sms-(new|meta|budget)-|sms-store-progress/.test(e.id)):s.includes('sms-tab')?tabs:panels;
-  for(const view of ['new','meta','budget']){const t=el('tab-'+view);t.dataset.view=view;tabs.push(t);const p=el('panel-'+view);p.dataset.panel=view;panels.push(p);}
-  for(const [id,value] of [['new-mode','cumulative'],['new-store','all'],['new-month',''],['meta-store','all'],['meta-month',''],['budget-type','all'],['budget-month','']]) el('sms-'+id,'SELECT',value);
+  root.querySelectorAll=s=>s.includes('[id^=')?[...elements.values()].filter(e=>/^sms-(new|meta|budget|consumption)-|sms-store-progress/.test(e.id)):s.includes('sms-tab')?tabs:panels;
+  for(const view of ['new','consumption','meta','budget']){const t=el('tab-'+view);t.dataset.view=view;tabs.push(t);const p=el('panel-'+view);p.dataset.panel=view;panels.push(p);}
+  for(const [id,value] of [['new-mode','cumulative'],['new-store','all'],['new-month',''],['meta-store','all'],['meta-month',''],['budget-type','all'],['budget-month',''],['consumption-mode','cumulative'],['consumption-cohort','new'],['consumption-store','all'],['consumption-month','']]) el('sms-'+id,'SELECT',value);
   let oauth,reads=0;
   const google={accounts:{oauth2:{initTokenClient(opts){oauth=opts;return {requestAccessToken(){}};}}}};
   const window={SMSData:data,SMS_CONFIG:{sheetId:'synthetic',googleClientId:'synthetic'},google,setInterval:fn=>{intervals.push(fn);return intervals.length;},clearInterval(){},setTimeout(){return 1;},clearTimeout(){},addEventListener(){}};
@@ -91,10 +98,47 @@ test('UI login, refresh, all three panels, single-store month and logout',async(
   assert.match(elements.get('#sms-new-actual').html,/6</);
   assert.match(elements.get('#sms-meta-cpa').html,/20</);
   assert.match(elements.get('#sms-budget-total').html,/7200</);
+  tabs[1].events.click();
+  assert.equal(panels[1].hidden,false);assert.equal(panels[0].hidden,true);
+  assert.match(elements.get('#sms-consumption-amount').html,/1400</);
+  elements.get('#sms-consumption-mode').value='monthly';elements.get('#sms-consumption-store').value='jc';elements.get('#sms-consumption-cohort').value='returning';
+  elements.get('#sms-consumption-mode').events.change();
+  assert.match(elements.get('#sms-consumption-amount').html,/50</);
+  assert.equal(elements.get('#sms-consumption-rate').textContent,'100.0%');
+  assert.doesNotMatch(elements.get('#sms-consumption-table').html,/2025\/12/);
   elements.get('#sms-new-mode').value='monthly';elements.get('#sms-new-store').value='ty';
   elements.get('#sms-new-mode').events.change();
   assert.match(elements.get('#sms-new-actual').html,/2</);
   await elements.get('#sms-refresh').events.click();assert.equal(reads,2);
   elements.get('#sms-signout').events.click();
   assert.equal(root.hidden,true);assert.equal(elements.get('#sms-new-actual').html,'');
+  assert.equal(elements.get('#sms-consumption-amount').html,'');assert.equal(elements.get('#sms-consumption-total').html,'');
+});
+
+test('consumption is reconciled by month, cohort and store; weighted average uses arrivals',()=>{
+  const raw=fixtures(),rows=data.parseConsumptionRows(table(raw[3]),table(raw[4]));
+  assert.deepEqual(data.consumptionTotal(rows,'all','new'),{amount:1400,count:6,arrivals:12,average:1400/12,rate:0.5});
+  assert.equal(data.consumptionTotal(rows,'ty','new').amount,200);
+  assert.equal(data.consumptionTotal(rows,'all','all').amount,1450);
+  assert.equal(data.consumptionTotal([rows[0]],'all','returning').average,null);
+  assert.equal(data.consumptionTotal(rows,'ty','returning').amount,0);
+  assert.equal(data.consumptionTotal([]).amount,null);
+});
+
+test('consumption rejects missing values, duplicates, missing cohorts and mismatched totals',()=>{
+  const raw=fixtures(),parse=(a=raw[3],b=raw[4])=>data.parseConsumptionRows(table(a),table(b));
+  assert.throws(()=>parse([...raw[3],raw[3][0]]),/重複/);
+  assert.throws(()=>parse(raw[3],[...raw[4],raw[4][0]]),/重複/);
+  assert.throws(()=>parse(raw[3],raw[4].slice(1)),/不一致/);
+  assert.throws(()=>parse(raw[3].filter(r=>r['客群']==='新客')),/不符|不完整/);
+  assert.throws(()=>parse(raw[3],raw[4].map((r,i)=>i===0?{...r,'消費金額':null}:r)),/缺少/);
+  assert.throws(()=>parse(raw[3],raw[4].map((r,i)=>i===0?{...r,'統計基準':'依詢問日期'}:r)),/統計基準/);
+});
+
+test('consumption accepts Sheet serial dates, excludes other fiscal years, and blocks truncation',()=>{
+  const raw=fixtures();raw[3][0]['月份']=45992;raw[4][0]['月份']=45992;
+  raw[3].push({...raw[3][0],'月份':'2025-11'});
+  raw[4].push({...raw[4][0],'月份':'2025-11'});
+  assert.equal(data.parseConsumptionRows(table(raw[3]),table(raw[4])).length,2);
+  assert.throws(()=>data.parseConsumptionRows(table(raw[3]),Array(401).fill([])),/上限/);
 });

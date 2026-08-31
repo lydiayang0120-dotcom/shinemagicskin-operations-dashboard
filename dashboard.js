@@ -1,10 +1,10 @@
 (() => {
   'use strict';
   const root = document.getElementById('sms-dashboard-web');
-  const {months,parseAll,metaTotal,budgetAggregate} = window.SMSData;
+  const {months,parseAll,metaTotal,budgetAggregate,consumptionTotal} = window.SMSData;
   const authWall=document.getElementById('sms-auth-wall'), authButton=document.getElementById('sms-auth-button'), authStatus=document.getElementById('sms-auth-status');
   const config=window.SMS_CONFIG||{};
-  let newRows=[],metaRows=[],budgetRows=[];
+  let newRows=[],metaRows=[],budgetRows=[],consumptionRows=[];
   let tokenClient=null,sessionToken=null,tokenExpires=0,expiryTimer=null,busy=false,requestVersion=0;
   const $=selector=>root.querySelector(selector);
   const fmt=n=>n===null?'待補':String(Math.round(n));
@@ -23,10 +23,10 @@
     requestVersion++;
     sessionToken=null;tokenExpires=0;
     window.clearTimeout(expiryTimer);
-    newRows=[];metaRows=[];budgetRows=[];
+    newRows=[];metaRows=[];budgetRows=[];consumptionRows=[];
     root.hidden=true;authWall.hidden=false;
     // Remove financial data from the DOM, not just from the visible layout.
-    root.querySelectorAll('[id^="sms-new-"],[id^="sms-meta-"],[id^="sms-budget-"],#sms-store-progress').forEach(el=>{
+    root.querySelectorAll('[id^="sms-new-"],[id^="sms-meta-"],[id^="sms-budget-"],[id^="sms-consumption-"],#sms-store-progress').forEach(el=>{
       if(el.tagName!=='SELECT') el.replaceChildren();
       else if(el.id.endsWith('-month')) el.replaceChildren();
     });
@@ -34,7 +34,7 @@
     setAuthStatus(message);
   }
   async function fetchSheetData(accessToken,version) {
-    const ranges=['月度KPI!A1:Y100','Meta月度KPI!A1:T100','年度預算!A1:R100'];
+    const ranges=['月度KPI!A1:Y100','Meta月度KPI!A1:T100','年度預算!A1:R100','月報總覽!A1:P40','分店消費!A1:P401'];
     const query=ranges.map(range=>'ranges='+encodeURIComponent(range)).join('&');
     const endpoint='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(config.sheetId)+'/values:batchGet?'+query+'&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE';
     const response=await fetch(endpoint,{headers:{Authorization:'Bearer '+accessToken},cache:'no-store',signal:AbortSignal.timeout(20000)});
@@ -45,15 +45,16 @@
     }
     const payload=await response.json(),next=parseAll(payload.valueRanges||[]);
     if(version!==requestVersion) return false;
-    ({newRows,metaRows,budgetRows}=next);
+    ({newRows,metaRows,budgetRows,consumptionRows}=next);
     return true;
   }
   function renderPrivateDashboard() {
     fillMonthSelect($('#sms-new-month'),newRows.map(row=>row.m));
     fillMonthSelect($('#sms-meta-month'),metaRows.map(row=>row.m));
+    fillMonthSelect($('#sms-consumption-month'),consumptionRows.map(row=>row.m));
     fillMonthSelect($('#sms-budget-month'),budgetRows.filter(row=>row.meta.a!==null||row.lap.a!==null).map(row=>row.m));
     $('#sms-data-updated').textContent='上次讀取 '+new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})+'｜每 5 分鐘更新';
-    updateNew();updateMeta();updateBudget();
+    updateNew();updateMeta();updateBudget();updateConsumption();
     authWall.hidden=true;root.hidden=false;
   }
   async function refreshData() {
@@ -144,6 +145,26 @@
       }
 
 
+  function updateConsumption() {
+    const mode=$('#sms-consumption-mode').value,store=$('#sms-consumption-store').value,cohort=$('#sms-consumption-cohort').value;
+    const cutoff=Number($('#sms-consumption-month').value),rows=consumptionRows.filter(r=>r.m<=cutoff);
+    const active=mode==='monthly'?rows.filter(r=>r.m===cutoff):rows,total=consumptionTotal(active,store,cohort);
+    const cohortName=cohort==='new'?'新客':cohort==='returning'?'舊客':'新客＋舊客';
+    $('#sms-consumption-amount').innerHTML=unit(total.amount,'元');
+    $('#sms-consumption-count').innerHTML=unit(total.count,'筆');
+    $('#sms-consumption-average').innerHTML=total.average===null?'—':unit(total.average,'元');
+    $('#sms-consumption-rate').textContent=pct(total.rate);
+    $('#sms-consumption-arrivals').textContent='消費數 ÷ 到店數｜到店 '+fmt(total.arrivals)+' 筆';
+    $('#sms-consumption-period').textContent=(mode==='monthly'?months[cutoff]:'2025/12－'+months[cutoff])+'｜'+storeName(store)+'｜'+cohortName;
+    const max=Math.max(...rows.map(r=>consumptionTotal([r],store,cohort).amount),1);
+    $('#sms-consumption-bars').innerHTML=rows.map(r=>{const v=consumptionTotal([r],store,cohort);return `<div class="sms-bar-row"><span>${months[r.m].slice(2)}</span><div class="sms-bar-track"><div class="sms-bar" style="width:${v.amount/max*100}%;min-width:0"></div></div><span class="sms-bar-value" title="${months[r.m]} ${fmt(v.amount)} 元">${fmt(v.amount)}</span></div>`;}).join('');
+    const combined=consumptionTotal(active,'all',cohort).amount;
+    $('#sms-consumption-stores').innerHTML=['ty','jc'].map(code=>{const v=consumptionTotal(active,code,cohort),share=combined>0?v.amount/combined:null;return `<div class="sms-store"><div class="sms-store-title"><strong>${storeName(code)}愛美肌</strong><span>${pct(share)}</span></div><div class="sms-track"><div class="sms-fill ${code==='jc'?'sage':''}" style="width:${(share||0)*100}%"></div></div><div class="sms-store-meta"><span>${fmt(v.amount)} 元</span><span>消費 ${fmt(v.count)} 筆</span></div></div>`;}).join('');
+    const cells=v=>`<td>${fmt(v.amount)}</td><td>${fmt(v.count)}</td><td>${fmt(v.arrivals)}</td><td>${v.average===null?'—':fmt(v.average)}</td><td>${pct(v.rate)}</td>`;
+    $('#sms-consumption-table-label').textContent=storeName(store)+'｜'+cohortName;
+    $('#sms-consumption-table').innerHTML=active.slice().reverse().map(r=>`<tr data-current="${r.m===cutoff}"><td>${months[r.m]}</td>${cells(consumptionTotal([r],store,cohort))}</tr>`).join('');
+    $('#sms-consumption-total').innerHTML=`<tr><th>${mode==='monthly'?'單月合計':'年度累積'}</th>${cells(total)}</tr>`;
+  }
   function updateMeta() {
     const store=$('#sms-meta-store').value,cutoff=Number($('#sms-meta-month').value);
     const rows=metaRows.filter(r=>r.m<=cutoff),total=metaTotal(rows,store);
@@ -179,6 +200,7 @@
     root.querySelectorAll('.sms-view').forEach(panel=>panel.hidden=panel.dataset.panel!==button.dataset.view);
   }));
   ['#sms-new-mode','#sms-new-store','#sms-new-month'].forEach(s=>$(s).addEventListener('change',updateNew));
+  ['#sms-consumption-mode','#sms-consumption-store','#sms-consumption-month','#sms-consumption-cohort'].forEach(s=>$(s).addEventListener('change',updateConsumption));
   ['#sms-meta-store','#sms-meta-month'].forEach(s=>$(s).addEventListener('change',updateMeta));
   ['#sms-budget-type','#sms-budget-month'].forEach(s=>$(s).addEventListener('change',updateBudget));
   initializePrivateDashboard();

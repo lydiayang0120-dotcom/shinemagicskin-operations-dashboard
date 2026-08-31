@@ -106,6 +106,72 @@
     const list = type === 'all' ? [row.meta,row.lap] : [row[type]];
     return {b:sumKnown(list.map(item => item.b)), a:sumKnown(list.map(item => item.a)), partial:list.some(item => item.partial || item.a === null)};
   }
+  function consumptionMonth(value) {
+    let label;
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      const date = new Date(Date.UTC(1899, 11, 30) + value * 86400000);
+      label = `${date.getUTCFullYear()}/${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+    } else {
+      const match = String(value).match(/^(\d{4})[-/](\d{1,2})(?:[-/]\d{1,2})?$/);
+      if (!match || Number(match[2]) < 1 || Number(match[2]) > 12) throw new Error('消費資料月份格式不正確。');
+      label = `${match[1]}/${match[2].padStart(2, '0')}`;
+    }
+    return months.indexOf(label);
+  }
+  const consumptionFields = ['amount','count','arrivals'];
+  const emptyConsumption = () => ({amount:0,count:0,arrivals:0});
+  function consumptionValues(row) {
+    const value = {amount:required(row['消費金額']),count:required(row['消費數']),arrivals:required(row['到店數'])};
+    if (!Number.isInteger(value.count) || !Number.isInteger(value.arrivals) || value.count > value.arrivals || (value.count === 0 && value.amount > 0)) throw new Error('消費數、到店數或金額不一致。');
+    return value;
+  }
+  function parseConsumptionRows(overview, detail) {
+    if ((overview || []).length >= 40 || (detail || []).length >= 401) throw new Error('消費資料已達讀取上限，請先擴充範圍。');
+    const grouped = new Map(), seen = new Set();
+    for (const row of records(overview, ['月份','品牌代碼','客群','到店數','消費數','消費金額'])) {
+      if (row['品牌代碼'] !== 'MS') continue;
+      const m = consumptionMonth(row['月份']);
+      if (m < 0) continue;
+      const cohort = row['客群'] === '新客' ? 'new' : row['客群'] === '舊客' ? 'returning' : null;
+      if (!cohort) throw new Error('月報出現未設定的客群。');
+      add(grouped, m, cohort, {total:consumptionValues(row),ty:emptyConsumption(),jc:emptyConsumption()});
+    }
+    for (const row of records(detail, ['月份','品牌代碼','客群','統計基準','預約店','來源代碼','到店數','消費數','消費金額'])) {
+      if (row['品牌代碼'] !== 'MS') continue;
+      const m = consumptionMonth(row['月份']);
+      if (m < 0) continue;
+      const cohort = row['客群'] === '新客' ? 'new' : row['客群'] === '舊客' ? 'returning' : null;
+      const code = storeCode(row['預約店']), group = grouped.get(m)?.[cohort];
+      if (!group || !code || row['統計基準'] !== '依預約日期') throw new Error('分店消費的客群、分店、月份或統計基準不符。');
+      if (row['來源代碼'] === null) throw new Error('分店消費缺少來源代碼。');
+      const key = `${m}/${cohort}/${code}/${row['來源代碼']}`;
+      if (seen.has(key)) throw new Error('分店消費出現重複來源，停止加總。');
+      seen.add(key);
+      const value = consumptionValues(row);
+      consumptionFields.forEach(field => group[code][field] += value[field]);
+    }
+    const result = sorted(grouped);
+    if (!result.length || result.some((row, i) => row.m !== i || !row.new || !row.returning)) throw new Error('消費月份或新舊客月報不完整。');
+    // Sparse source rows mean zero only after reconciliation with monthly totals.
+    for (const row of result) for (const cohort of ['new','returning']) {
+      const group = row[cohort];
+      for (const field of consumptionFields) {
+        if (Math.abs(group.ty[field] + group.jc[field] - group.total[field]) > 0.01) throw new Error(`${months[row.m]} 消費明細與月報總覽不一致，停止顯示。`);
+      }
+    }
+    return result;
+  }
+  function consumptionTotal(rows, store = 'all', cohort = 'new') {
+    if (!['all','ty','jc'].includes(store) || !['all','new','returning'].includes(cohort)) throw new Error('消費篩選條件無效。');
+    if (!rows.length) return {amount:null,count:null,arrivals:null,average:null,rate:null};
+    const result = emptyConsumption();
+    for (const row of rows) for (const key of (cohort === 'all' ? ['new','returning'] : [cohort])) {
+      const value = row[key][store === 'all' ? 'total' : store];
+      consumptionFields.forEach(field => result[field] += value[field]);
+    }
+    // The source report's average uses arrivals, including non-purchasers.
+    return {...result,average:result.arrivals > 0 ? result.amount / result.arrivals : null,rate:result.arrivals > 0 ? result.count / result.arrivals : null};
+  }
   function parseAll(ranges) {
     const newRows = parseNewRows(ranges[0]?.values), metaRows = parseMetaRows(ranges[1]?.values), budgetRows = parseBudgetRows(ranges[2]?.values);
     if (!newRows.length || !metaRows.length) throw new Error('來源尚無可顯示的新客或 Meta 資料。');
@@ -114,9 +180,10 @@
       if (meta.s !== null && budget.a !== null && Math.abs(meta.s - budget.a) > 0.01) throw new Error(`Meta 與年度預算的 ${months[row.m]} 花費不一致，請同步來源。`);
       if (meta.partial && budget.a !== null) budget.partial = true;
     }
-    return {newRows, metaRows, budgetRows};
+    const consumptionRows = parseConsumptionRows(ranges[3]?.values, ranges[4]?.values);
+    return {newRows, metaRows, budgetRows, consumptionRows};
   }
-  const api = {months,number,parseNewRows,parseMetaRows,parseBudgetRows,parseAll,metaTotal,budgetAggregate};
+  const api = {months,number,parseNewRows,parseMetaRows,parseBudgetRows,parseAll,metaTotal,budgetAggregate,parseConsumptionRows,consumptionTotal};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else host.SMSData = Object.freeze(api);
 })(typeof window !== 'undefined' ? window : globalThis);

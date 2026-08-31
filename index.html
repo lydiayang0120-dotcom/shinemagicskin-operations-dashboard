@@ -222,13 +222,14 @@
     <div>
       <p class="sms-kicker">SHINE MAGIC SKIN</p>
       <h1>年度營運儀表板</h1>
-      <p class="sms-subtitle">光澤愛美肌｜2026 年度新客、Meta 與預算分析</p>
+      <p class="sms-subtitle">光澤愛美肌｜2026 年度新客、消費、Meta 與預算分析</p>
     </div>
     <div><p class="sms-updated" id="sms-data-updated" role="status">等待授權讀取資料</p><div class="sms-controls" style="margin:8px 0 0"><button class="sms-tab" id="sms-refresh" type="button">更新資料</button><button class="sms-tab" id="sms-signout" type="button">登出儀表板</button></div></div>
   </header>
 
   <nav class="sms-tabs" aria-label="儀表板頁面">
     <button class="sms-tab" type="button" role="tab" aria-selected="true" data-view="new">新客營運</button>
+    <button class="sms-tab" type="button" role="tab" aria-selected="false" data-view="consumption">消費表現</button>
     <button class="sms-tab" type="button" role="tab" aria-selected="false" data-view="meta">Meta 廣告</button>
     <button class="sms-tab" type="button" role="tab" aria-selected="false" data-view="budget">年度預算</button>
   </nav>
@@ -258,6 +259,37 @@
     <div class="sms-panel">
       <div class="sms-panel-head"><h2>月份新客明細</h2><span class="sms-legend" id="sms-new-table-label"></span></div>
       <div class="sms-table-wrap"><table><thead><tr><th>月份</th><th>桃園實績／目標</th><th>江翠實績／目標</th><th>整體實績／目標</th><th>達成率</th></tr></thead><tbody id="sms-new-table"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="sms-view" data-panel="consumption" hidden>
+    <div class="sms-controls">
+      <label><span>檢視方式</span><select id="sms-consumption-mode"><option value="cumulative">年度累積</option><option value="monthly">單月檢討</option></select></label>
+      <label><span>客群</span><select id="sms-consumption-cohort"><option value="new">新客</option><option value="returning">舊客</option><option value="all">新客＋舊客</option></select></label>
+      <label><span>分店</span><select id="sms-consumption-store"><option value="all">全部分店</option><option value="ty">桃園愛美肌</option><option value="jc">江翠愛美肌</option></select></label>
+      <label><span>截至月份</span><select id="sms-consumption-month"></select></label>
+    </div>
+    <div class="sms-stats">
+      <div class="sms-card"><div class="sms-label">消費金額</div><div class="sms-value" id="sms-consumption-amount"></div><div class="sms-note" id="sms-consumption-period"></div></div>
+      <div class="sms-card"><div class="sms-label">消費數</div><div class="sms-value" id="sms-consumption-count"></div><div class="sms-note">沿用月報計數，累積值未跨月去重</div></div>
+      <div class="sms-card"><div class="sms-label">平均客單（依到店數）</div><div class="sms-value" id="sms-consumption-average"></div><div class="sms-note">消費金額 ÷ 到店數，沿用月報口徑</div></div>
+      <div class="sms-card"><div class="sms-label">到店消費率</div><div class="sms-value" id="sms-consumption-rate"></div><div class="sms-note" id="sms-consumption-arrivals"></div></div>
+    </div>
+    <div class="sms-grid">
+      <div class="sms-panel">
+        <div class="sms-panel-head"><h2>每月消費金額</h2></div>
+        <div class="sms-bars" id="sms-consumption-bars"></div>
+      </div>
+      <div class="sms-panel">
+        <div class="sms-panel-head"><h2>分店金額占比</h2></div>
+        <div id="sms-consumption-stores"></div>
+        <p class="sms-note">依上方所選期間與客群計算，與單店檢視共用期間。</p>
+      </div>
+    </div>
+    <div class="sms-panel">
+      <div class="sms-panel-head"><h2>月份消費明細</h2><span class="sms-legend" id="sms-consumption-table-label"></span></div>
+      <div class="sms-table-wrap"><table><thead><tr><th>月份</th><th>消費金額</th><th>消費數</th><th>到店數</th><th>平均客單</th><th>到店消費率</th></tr></thead><tbody id="sms-consumption-table"></tbody><tfoot id="sms-consumption-total"></tfoot></table></div>
+      <p class="sms-footnote">資料來自「月報總覽／分店消費」，依預約日期歸屬月份，不等於入帳月份或全店營收。新舊客分開計算；累積客單與消費率以總額、總數重算，不平均各月比率。不使用客服人工詢問數，亦不將此金額直接當成 Meta 廣告收益。</p>
     </div>
   </section>
 

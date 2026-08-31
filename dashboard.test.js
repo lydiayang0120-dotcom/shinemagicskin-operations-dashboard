@@ -72,6 +72,16 @@ test('anonymous HTML is data-free and JS has no persistent credential store',()=
   assert.match(js,/cache:'no-store'/);
   new vm.Script(js);
 });
+test('Meta budget copy consistently means the monthly execution target',()=>{
+  const html=fs.readFileSync(__dirname+'/index.html','utf8');
+  const js=fs.readFileSync(__dirname+'/dashboard.js','utf8');
+  assert.match(html,/Meta 預算＝每月執行目標/);
+  assert.match(html,/<th>Meta 預算<\/th>/);
+  assert.match(html,/實際花費 ÷ Meta 預算/);
+  assert.doesNotMatch(html+js,/參考預算|PM 核定/);
+  const rows=data.parseAll(ranges(fixtures())).metaRows;
+  assert.equal(data.metaTotal(rows,'all').rate,400/480);
+});
 test('UI login, refresh, four panels, consumption filters and logout',async()=>{
   const elements=new Map(),intervals=[],tabs=[],panels=[];
   function el(id,tag='DIV',value='') {
@@ -103,6 +113,7 @@ test('UI login, refresh, four panels, consumption filters and logout',async()=>{
   assert.equal(root.hidden,false);assert.equal(reads,1);
   assert.match(elements.get('#sms-new-actual').html,/6</);
   assert.match(elements.get('#sms-meta-cpa').html,/20</);
+  assert.match(elements.get('#sms-meta-completeness').textContent,/每月執行目標/);
   assert.match(elements.get('#sms-budget-total').html,/7200</);
   tabs[1].events.click();
   assert.equal(panels[1].hidden,false);assert.equal(panels[0].hidden,true);
@@ -128,6 +139,7 @@ test('UI login, refresh, four panels, consumption filters and logout',async()=>{
   assert.equal(elements.get('#sms-refresh').textContent,'更新資料');
   assert.match(elements.get('#sms-data-updated').textContent,/更新完成.*\d+:\d+:\d+/);
   assert.match(elements.get('#sms-meta-table').html,/<td>300<\/td>/);
+  assert.equal(elements.get('#sms-meta-rate').textContent,'66.7%');
   assert.match(elements.get('#sms-budget-total').html,/7200</);
   assert.equal(elements.get('#sms-new-mode').value,'monthly');
   assert.equal(elements.get('#sms-new-store').value,'ty');

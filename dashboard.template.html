@@ -302,7 +302,7 @@
       <div class="sms-card"><div class="sms-label">Meta 實際花費</div><div class="sms-value" id="sms-meta-spend"></div><div class="sms-note" id="sms-meta-period"></div></div>
       <div class="sms-card"><div class="sms-label">Meta 詢問數</div><div class="sms-value" id="sms-meta-inquiries"></div><div class="sms-note">平台「訊息對話開始次數」</div></div>
       <div class="sms-card"><div class="sms-label">整體 Meta CPA</div><div class="sms-value" id="sms-meta-cpa"></div><div class="sms-note">訊息廣告花費 ÷ Meta 詢問數</div></div>
-      <div class="sms-card"><div class="sms-label">參考預算執行率</div><div class="sms-value" id="sms-meta-rate"></div><div class="sms-note">依目前已填參考預算計算</div></div>
+      <div class="sms-card"><div class="sms-label">預算執行率</div><div class="sms-value" id="sms-meta-rate"></div><div class="sms-note">實際花費 ÷ Meta 預算</div></div>
     </div>
     <div class="sms-grid">
       <div class="sms-panel">
@@ -316,8 +316,8 @@
       </div>
     </div>
     <div class="sms-panel">
-      <div class="sms-panel-head"><h2>月份 Meta 明細</h2><span class="sms-legend">參考預算不是 PM 核定預算</span></div>
-      <div class="sms-table-wrap"><table><thead><tr><th>月份</th><th>實際花費</th><th>Meta 詢問</th><th>CPA</th><th>參考預算</th><th>執行率</th><th>完整性</th></tr></thead><tbody id="sms-meta-table"></tbody></table></div>
+      <div class="sms-panel-head"><h2>月份 Meta 明細</h2><span class="sms-legend">Meta 預算＝每月執行目標</span></div>
+      <div class="sms-table-wrap"><table><thead><tr><th>月份</th><th>實際花費</th><th>Meta 詢問</th><th>CPA</th><th>Meta 預算</th><th>執行率</th><th>完整性</th></tr></thead><tbody id="sms-meta-table"></tbody></table></div>
     </div>
   </section>
 
@@ -349,7 +349,7 @@
     </div>
   </section>
 
-  <script src="dashboard.js"></script>
+  <script src="dashboard.js?v=20260831-meta-target"></script>
 </div>
 
 </body>

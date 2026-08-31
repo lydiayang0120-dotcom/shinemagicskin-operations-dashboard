@@ -1,0 +1,100 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const data = require('./dashboard-data.js');
+const table = rows => {const h=Object.keys(rows[0]);return [h,...rows.map(r=>h.map(k=>r[k]))];};
+function fixtures() {
+  const newRows=[],metaRows=[],budgetRows=[];
+  for(let m=0;m<12;m++) {
+    for(const name of ['桃園愛美肌','江翠愛美肌']) {
+      newRows.push({'月份':data.months[m],'品牌代碼':'MS','年度歸屬':2026,'年度月序':m+1,'分店':name,'資料狀態':m<2?'已匯入':'待匯入','實際新客':m+1,'新客目標':10});
+      if(m<2) metaRows.push({'月份':data.months[m],'品牌代碼':'MS','年度歸屬':2026,'月序':m+1,'分店':name,'實際花費':100,'訊息花費':80,'Meta詢問數':4,'Meta預算':120,'資料完整性':'已確認','查詢備註':''});
+    }
+    for(const platform of ['Meta','LAP']) budgetRows.push({'月份':data.months[m],'品牌代碼':'MS','年度歸屬':2026,'年度月序':m+1,'廣告平台':platform,'預算金額':300,'實際花費':m<2?(platform==='Meta'?200:10):null,'實際花費來源':'測試資料','填寫狀態':m<2?'已填':'待補'});
+  }
+  return [newRows,metaRows,budgetRows];
+}
+const ranges=raw=>raw.map(rows=>({values:table(rows)}));
+test('fiscal year, confirmed months and message-cost CPA',()=>{
+  const r=data.parseAll(ranges(fixtures()));
+  assert.equal(r.newRows.length,2);
+  assert.equal(data.months[0],'2025/12');
+  assert.equal(data.months[11],'2026/11');
+  assert.equal(data.metaTotal(r.metaRows,'all').cpa,20);
+  assert.equal(r.budgetRows[11].meta.a,null);
+});
+test('missing Meta zero placeholders remain unknown; confirmed zero stays zero',()=>{
+  const raw=fixtures();
+  Object.assign(raw[1][0],{'實際花費':0,'訊息花費':0,'Meta詢問數':0,'Meta預算':null,'資料完整性':'部分資料','查詢備註':'該分店資料待補'});
+  const r=data.parseMetaRows(table(raw[1]));
+  assert.equal(data.metaTotal([r[0]],'ty').s,null);
+  assert.equal(data.metaTotal([r[0]],'all').status,'部分資料');
+  Object.assign(raw[1][0],{'資料完整性':'已確認','查詢備註':''});
+  const zero=data.metaTotal([data.parseMetaRows(table(raw[1]))[0]],'ty');
+  assert.equal(zero.s,0);assert.equal(zero.cpa,null);
+});
+test('duplicate keys, missing new-customer months and invalid numbers fail closed',()=>{
+  const raw=fixtures();
+  assert.throws(()=>data.parseNewRows(table([...raw[0],raw[0][0]])),/重複/);
+  assert.throws(()=>data.parseNewRows(table(raw[0].filter(r=>r['年度月序']!==1))),/完整/);
+  assert.throws(()=>data.number('#DIV/0!'),/無效/);
+  assert.throws(()=>data.parseNewRows(table(raw[0].map((r,i)=>i===0?{...r,'實際新客':null}:r))),/缺少/);
+});
+test('mismatched dates, schema and source totals fail closed',()=>{
+  const raw=fixtures();
+  assert.throws(()=>data.parseNewRows([['incorrect'],[1]]),/欄位/);
+  const date=structuredClone(raw);date[0][0]['月份']='2026/01';
+  assert.throws(()=>data.parseNewRows(table(date[0])),/月序/);
+  raw[2][0]['實際花費']=201;
+  assert.throws(()=>data.parseAll(ranges(raw)),/不一致/);
+});
+test('partial-platform budgets are not reported complete',()=>{
+  const raw=fixtures();raw[2][1]['實際花費']=null;
+  const r=data.parseBudgetRows(table(raw[2]));
+  assert.equal(data.budgetAggregate(r[0],'all').a,200);
+  assert.equal(data.budgetAggregate(r[0],'all').partial,true);
+  assert.equal(data.budgetAggregate(r[0],'lap').a,null);
+});
+test('anonymous HTML is data-free and JS has no persistent credential store',()=>{
+  const html=fs.readFileSync(__dirname+'/index.html','utf8');
+  assert.match(html,/<div id="sms-dashboard-web"[^>]+ hidden>/);
+  assert.doesNotMatch(html,/實際花費\s*\d/);
+  const js=fs.readFileSync(__dirname+'/dashboard.js','utf8');
+  assert.doesNotMatch(js,/localStorage|sessionStorage|client_secret|GOCSPX/);
+  assert.match(js,/cache:'no-store'/);
+  new vm.Script(js);
+});
+test('UI login, refresh, all three panels, single-store month and logout',async()=>{
+  const elements=new Map(),intervals=[],tabs=[],panels=[];
+  function el(id,tag='DIV',value='') {
+    const e={id,tagName:tag,value,hidden:false,dataset:{},events:{},textContent:'',disabled:false,html:'',
+      addEventListener(name,fn){this.events[name]=fn;},setAttribute(){},replaceChildren(){this.html='';this.textContent='';},
+      get innerHTML(){return this.html;},set innerHTML(s){this.html=s;if(this.tagName==='SELECT'){this.value=(s.match(/value="(\d+)" selected/)||s.match(/value="(\d+)"/)||['',''])[1];}}
+    };elements.set('#'+id,e);return e;
+  }
+  const root=el('sms-dashboard-web');root.hidden=true;
+  const doc={hidden:false,getElementById:id=>elements.get('#'+id)||el(id)};
+  root.querySelector=s=>elements.get(s)||el(s.slice(1));
+  root.querySelectorAll=s=>s.includes('[id^=')?[...elements.values()].filter(e=>/^sms-(new|meta|budget)-|sms-store-progress/.test(e.id)):s.includes('sms-tab')?tabs:panels;
+  for(const view of ['new','meta','budget']){const t=el('tab-'+view);t.dataset.view=view;tabs.push(t);const p=el('panel-'+view);p.dataset.panel=view;panels.push(p);}
+  for(const [id,value] of [['new-mode','cumulative'],['new-store','all'],['new-month',''],['meta-store','all'],['meta-month',''],['budget-type','all'],['budget-month','']]) el('sms-'+id,'SELECT',value);
+  let oauth,reads=0;
+  const google={accounts:{oauth2:{initTokenClient(opts){oauth=opts;return {requestAccessToken(){}};}}}};
+  const window={SMSData:data,SMS_CONFIG:{sheetId:'synthetic',googleClientId:'synthetic'},google,setInterval:fn=>{intervals.push(fn);return intervals.length;},clearInterval(){},setTimeout(){return 1;},clearTimeout(){},addEventListener(){}};
+  const fetch=async()=>{reads++;return {ok:true,json:async()=>({valueRanges:ranges(fixtures())})};};
+  vm.runInNewContext(fs.readFileSync(__dirname+'/dashboard.js','utf8'),{window,document:doc,google,fetch,AbortSignal,Date,console});
+  assert.equal(root.hidden,true);assert.equal(reads,0);
+  intervals[0]();oauth.callback({access_token:'synthetic-token',expires_in:3600});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(root.hidden,false);assert.equal(reads,1);
+  assert.match(elements.get('#sms-new-actual').html,/6</);
+  assert.match(elements.get('#sms-meta-cpa').html,/20</);
+  assert.match(elements.get('#sms-budget-total').html,/7200</);
+  elements.get('#sms-new-mode').value='monthly';elements.get('#sms-new-store').value='ty';
+  elements.get('#sms-new-mode').events.change();
+  assert.match(elements.get('#sms-new-actual').html,/2</);
+  await elements.get('#sms-refresh').events.click();assert.equal(reads,2);
+  elements.get('#sms-signout').events.click();
+  assert.equal(root.hidden,true);assert.equal(elements.get('#sms-new-actual').html,'');
+});

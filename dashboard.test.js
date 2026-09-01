@@ -112,6 +112,9 @@ test('UI login, refresh, four panels, consumption filters and logout',async()=>{
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(root.hidden,false);assert.equal(reads,1);
   assert.match(elements.get('#sms-new-actual').html,/6</);
+  assert.match(elements.get('#sms-new-total').html,/年度累積/);
+  assert.match(elements.get('#sms-new-total').html,/6 \/ 40/);
+  assert.equal(elements.get('#sms-new-rate-heading').textContent,'整體達成率');
   assert.match(elements.get('#sms-meta-cpa').html,/20</);
   assert.match(elements.get('#sms-meta-completeness').textContent,/每月執行目標/);
   assert.match(elements.get('#sms-budget-total').html,/7200</);
@@ -126,6 +129,8 @@ test('UI login, refresh, four panels, consumption filters and logout',async()=>{
   elements.get('#sms-new-mode').value='monthly';elements.get('#sms-new-store').value='ty';
   elements.get('#sms-new-mode').events.change();
   assert.match(elements.get('#sms-new-actual').html,/2</);
+  assert.equal(elements.get('#sms-new-rate-heading').textContent,'桃園達成率');
+  assert.match(elements.get('#sms-new-total').html,/年度累積/);
   let releaseFetch;
   fetchGate=new Promise(resolve=>{releaseFetch=resolve;});nextBudget=150;
   const refreshing=elements.get('#sms-refresh').events.click();

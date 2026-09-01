@@ -146,8 +146,15 @@
         rows.forEach(r=>{const a=sum(stores(r,store),s=>s.a),t=sum(stores(r,store),s=>s.t); runningA+=a;runningT+=t;actualSeries.push(mode==='monthly'?a:runningA);targetSeries.push(mode==='monthly'?t:runningT);});
         root.querySelector('#sms-new-chart').innerHTML=lineChart(actualSeries,targetSeries,rows.map(r=>months[r.m]));
         root.querySelector('#sms-store-progress').innerHTML=['ty','jc'].map(code=>{const a=sum(rows,r=>r[code].a),t=sum(rows,r=>r[code].t),rate=t?a/t:0,d=a-t;return `<div class="sms-store"><div class="sms-store-title"><strong>${code==='ty'?'桃園愛美肌':'江翠愛美肌'}</strong><span>${pct(rate)}</span></div><div class="sms-track"><div class="sms-fill ${code==='jc'?'sage':''}" style="width:${Math.min(rate*100,100)}%"></div></div><div class="sms-store-meta"><span>${fmt(a)} / ${fmt(t)} 人</span><span class="${d>=0?'sms-status-good':'sms-status-warn'}">${d>=0?'超前':'落後'} ${fmt(Math.abs(d))}</span></div></div>`;}).join('');
+        const tableCells=selection=>{
+          const value=code=>({a:sum(selection,r=>r[code].a),t:sum(selection,r=>r[code].t)});
+          const ty=value('ty'),jc=value('jc'),total={a:ty.a+jc.a,t:ty.t+jc.t},filtered=store==='all'?total:value(store);
+          return `<td title="實績 ${fmt(ty.a)} / 目標 ${fmt(ty.t)}">${fmt(ty.a)} / ${fmt(ty.t)}</td><td title="實績 ${fmt(jc.a)} / 目標 ${fmt(jc.t)}">${fmt(jc.a)} / ${fmt(jc.t)}</td><td>${fmt(total.a)} / ${fmt(total.t)}</td><td class="${filtered.a>=filtered.t?'sms-status-good':'sms-status-warn'}">${filtered.t?pct(filtered.a/filtered.t):'—'}</td>`;
+        };
         root.querySelector('#sms-new-table-label').textContent=`顯示至 ${months[cutoff]}`;
-        root.querySelector('#sms-new-table').innerHTML=rows.map(r=>{const a=r.ty.a+r.jc.a,t=r.ty.t+r.jc.t;return `<tr data-current="${r.m===cutoff}"><td>${months[r.m]}</td><td>${r.ty.a} / ${r.ty.t}</td><td>${r.jc.a} / ${r.jc.t}</td><td>${a} / ${t}</td><td class="${a>=t?'sms-status-good':'sms-status-warn'}">${pct(a/t)}</td></tr>`;}).reverse().join('');
+        root.querySelector('#sms-new-table').innerHTML=rows.slice().reverse().map(r=>`<tr data-current="${r.m===cutoff}"><td>${months[r.m]}</td>${tableCells([r])}</tr>`).join('');
+        root.querySelector('#sms-new-total').innerHTML=`<tr><th>年度累積</th>${tableCells(rows)}</tr>`;
+        root.querySelector('#sms-new-rate-heading').textContent=store==='all'?'整體達成率':`${storeName(store)}達成率`;
       }
 
 

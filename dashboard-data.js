@@ -181,6 +181,12 @@
       if (meta.partial && budget.a !== null) budget.partial = true;
     }
     const consumptionRows = parseConsumptionRows(ranges[3]?.values, ranges[4]?.values);
+    for (const row of newRows) {
+      const consumption = consumptionRows.find(item => item.m === row.m)?.new;
+      if (!consumption || row.ty.a !== consumption.ty.arrivals || row.jc.a !== consumption.jc.arrivals) {
+        throw new Error(`${months[row.m]} 實際新客與新客到店數不一致，停止顯示。`);
+      }
+    }
     return {newRows, metaRows, budgetRows, consumptionRows};
   }
   const api = {months,number,parseNewRows,parseMetaRows,parseBudgetRows,parseAll,metaTotal,budgetAggregate,parseConsumptionRows,consumptionTotal};

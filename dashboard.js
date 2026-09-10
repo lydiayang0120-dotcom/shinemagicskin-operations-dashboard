@@ -178,19 +178,27 @@
     $('#sms-consumption-table').innerHTML=active.slice().reverse().map(r=>`<tr data-current="${r.m===cutoff}"><td>${months[r.m]}</td>${cells(consumptionTotal([r],store,cohort))}</tr>`).join('');
     $('#sms-consumption-total').innerHTML=`<tr><th>${mode==='monthly'?'單月合計':'年度累積'}</th>${cells(total)}</tr>`;
   }
+  function metaWithBudgetSource(rows,store) {
+    const result=metaTotal(rows,store);
+    if(store!=='all') return result;
+    const planned=rows.map(row=>budgetRows.find(item=>item.m===row.m)?.meta.b??null);
+    const budget=planned.length&&planned.every(Number.isFinite)?planned.reduce((total,value)=>total+value,0):null;
+    return {...result,b:budget,rate:budget>0&&result.s!==null?result.s/budget:null};
+  }
   function updateMeta() {
     const store=$('#sms-meta-store').value,cutoff=Number($('#sms-meta-month').value);
-    const rows=metaRows.filter(r=>r.m<=cutoff),total=metaTotal(rows,store);
+    const rows=metaRows.filter(r=>r.m<=cutoff),total=metaWithBudgetSource(rows,store);
     $('#sms-meta-spend').innerHTML=unit(total.s,'元');
     $('#sms-meta-inquiries').innerHTML=unit(total.q,'筆');
     $('#sms-meta-cpa').innerHTML=total.cpa===null?'—':unit(total.cpa,'元');
     $('#sms-meta-rate').textContent=total.rate===null?'—':pct(total.rate);
     $('#sms-meta-period').textContent='2025/12－'+months[cutoff]+'｜'+storeName(store)+'｜'+total.status;
     const partial=rows.filter(r=>metaTotal([r],store).status!=='已確認').map(r=>months[r.m]);
-    $('#sms-meta-completeness').textContent=partial.length?'部分資料或待補月份：'+partial.join('、')+'。卡片與 CPA 僅依已取得數據計算；預算執行率只計花費與預算皆有值的項目。':'所選期間與分店資料已確認。Meta 預算為每月執行目標。';
+    const budgetCopy=store==='all'?'全品牌 Meta 預算取自「年度預算」的每月執行目標。':'單店 Meta 預算取自「Meta月度KPI」G 欄。';
+    $('#sms-meta-completeness').textContent=(partial.length?'部分資料或待補月份：'+partial.join('、')+'。卡片與 CPA 僅依已取得數據計算。':'所選期間與分店資料已確認。')+budgetCopy;
     const max=Math.max(...rows.map(r=>metaTotal([r],store).s||0),1);
     $('#sms-meta-bars').innerHTML=rows.map(r=>{const v=metaTotal([r],store);return '<div class="sms-bar-row"><span>'+months[r.m].slice(5)+'</span><div class="sms-bar-track"><div class="sms-bar" style="width:'+((v.s||0)/max*100)+'%;min-width:0"></div></div><span class="sms-bar-value" title="'+v.status+'">'+fmt(v.s)+'</span></div>';}).join('');
-    $('#sms-meta-table').innerHTML=rows.map(r=>{const v=metaTotal([r],store);return '<tr data-current="'+(r.m===cutoff)+'"><td>'+months[r.m]+'</td><td>'+fmt(v.s)+'</td><td>'+fmt(v.q)+'</td><td>'+(v.cpa===null?'—':fmt(v.cpa))+'</td><td>'+fmt(v.b)+'</td><td>'+(v.rate===null?'—':pct(v.rate))+'</td><td class="'+(v.status==='已確認'?'sms-status-good':'sms-status-warn')+'">'+v.status+'</td></tr>';}).reverse().join('');
+    $('#sms-meta-table').innerHTML=rows.map(r=>{const v=metaWithBudgetSource([r],store);return '<tr data-current="'+(r.m===cutoff)+'"><td>'+months[r.m]+'</td><td>'+fmt(v.s)+'</td><td>'+fmt(v.q)+'</td><td>'+(v.cpa===null?'—':fmt(v.cpa))+'</td><td>'+fmt(v.b)+'</td><td>'+(v.rate===null?'—':pct(v.rate))+'</td><td class="'+(v.status==='已確認'?'sms-status-good':'sms-status-warn')+'">'+v.status+'</td></tr>';}).reverse().join('');
   }
   function updateBudget() {
     const type=$('#sms-budget-type').value,cutoff=Number($('#sms-budget-month').value);

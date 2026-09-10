@@ -11,7 +11,8 @@ function fixtures() {
       newRows.push({'月份':data.months[m],'品牌代碼':'MS','年度歸屬':2026,'年度月序':m+1,'分店':name,'資料狀態':m<2?'已匯入':'待匯入','實際新客':name==='桃園愛美肌'?2:4,'新客目標':10});
       if(m<2) metaRows.push({'月份':data.months[m],'品牌代碼':'MS','年度歸屬':2026,'月序':m+1,'分店':name,'實際花費':100,'訊息花費':80,'Meta詢問數':4,'Meta預算':120,'資料完整性':'已確認','查詢備註':''});
     }
-    for(const platform of ['Meta','LAP']) budgetRows.push({'月份':data.months[m],'品牌代碼':'MS','年度歸屬':2026,'年度月序':m+1,'廣告平台':platform,'預算金額':300,'實際花費':m<2?(platform==='Meta'?200:10):null,'實際花費來源':'測試資料','填寫狀態':m<2?'已填':'待補'});
+    if(m<2) metaRows.push({'月份':data.months[m],'品牌代碼':'MS','年度歸屬':2026,'月序':m+1,'分店':'品牌整體','實際花費':50,'訊息花費':20,'Meta詢問數':1,'Meta預算':null,'資料完整性':'已確認','查詢備註':'無法唯一歸屬單店'});
+    for(const platform of ['Meta','LAP']) budgetRows.push({'月份':data.months[m],'品牌代碼':'MS','年度歸屬':2026,'年度月序':m+1,'廣告平台':platform,'預算金額':300,'實際花費':m<2?(platform==='Meta'?250:10):null,'實際花費來源':'測試資料','填寫狀態':m<2?'已填':'待補'});
   }
   const overview=[],detail=[];
   for(let m=0;m<2;m++) {
@@ -29,7 +30,27 @@ test('fiscal year, confirmed months and message-cost CPA',()=>{
   assert.equal(data.months[0],'2025/12');
   assert.equal(data.months[11],'2026/11');
   assert.equal(data.metaTotal(r.metaRows,'all').cpa,20);
+  assert.equal(data.metaTotal(r.metaRows,'all').s,500);
+  assert.equal(data.metaTotal(r.metaRows,'ty').s,200);
+  assert.equal(data.metaTotal(r.metaRows,'brand').s,100);
   assert.equal(r.budgetRows[11].meta.a,null);
+});
+test('brand-level Meta row is optional and does not make complete store data partial',()=>{
+  const raw=fixtures();
+  raw[1]=raw[1].filter(row=>row['分店']!=='品牌整體');
+  const rows=data.parseMetaRows(table(raw[1]));
+  const total=data.metaTotal(rows,'all');
+  assert.equal(total.s,400);
+  assert.equal(total.q,16);
+  assert.equal(total.status,'已確認');
+});
+test('a missing store budget keeps cumulative store budget and execution rate unknown',()=>{
+  const raw=fixtures();
+  raw[1].find(row=>row['月份']===data.months[0]&&row['分店']==='桃園愛美肌')['Meta預算']=null;
+  const total=data.metaTotal(data.parseMetaRows(table(raw[1])),'ty');
+  assert.equal(total.s,200);
+  assert.equal(total.b,null);
+  assert.equal(total.rate,null);
 });
 test('missing Meta zero placeholders remain unknown; confirmed zero stays zero',()=>{
   const raw=fixtures();
@@ -59,7 +80,7 @@ test('mismatched dates, schema and source totals fail closed',()=>{
 test('partial-platform budgets are not reported complete',()=>{
   const raw=fixtures();raw[2][1]['實際花費']=null;
   const r=data.parseBudgetRows(table(raw[2]));
-  assert.equal(data.budgetAggregate(r[0],'all').a,200);
+  assert.equal(data.budgetAggregate(r[0],'all').a,250);
   assert.equal(data.budgetAggregate(r[0],'all').partial,true);
   assert.equal(data.budgetAggregate(r[0],'lap').a,null);
 });
@@ -79,6 +100,8 @@ test('Meta budget copy consistently means the monthly execution target',()=>{
   assert.match(html,/<th>Meta 預算<\/th>/);
   assert.match(html,/實際花費 ÷ Meta 預算/);
   assert.doesNotMatch(html+js,/參考預算|PM 核定/);
+  assert.match(js,/全品牌 Meta 預算取自「年度預算」/);
+  assert.match(js,/單店 Meta 預算取自「Meta月度KPI」G 欄/);
   const rows=data.parseAll(ranges(fixtures())).metaRows;
   assert.equal(data.metaTotal(rows,'all').rate,400/480);
 });
@@ -103,7 +126,7 @@ test('UI login, refresh, four panels, consumption filters and logout',async()=>{
     reads++;
     if(fetchGate) await fetchGate;
     if(failNext){failNext=false;throw new TypeError('Failed to fetch');}
-    const raw=fixtures();raw[1].forEach(row=>row['Meta預算']=nextBudget);
+    const raw=fixtures();raw[1].forEach(row=>row['Meta預算']=row['分店']==='品牌整體'?null:nextBudget);
     return {ok:true,json:async()=>({valueRanges:ranges(raw)})};
   };
   vm.runInNewContext(fs.readFileSync(__dirname+'/dashboard.js','utf8'),{window,document:doc,google,fetch,AbortSignal,Date,console});
@@ -144,7 +167,12 @@ test('UI login, refresh, four panels, consumption filters and logout',async()=>{
   assert.equal(elements.get('#sms-refresh').textContent,'更新資料');
   assert.match(elements.get('#sms-data-updated').textContent,/更新完成.*\d+:\d+:\d+/);
   assert.match(elements.get('#sms-meta-table').html,/<td>300<\/td>/);
+  assert.equal(elements.get('#sms-meta-rate').textContent,'83.3%');
+  assert.match(elements.get('#sms-meta-completeness').textContent,/全品牌 Meta 預算取自「年度預算」/);
+  elements.get('#sms-meta-store').value='ty';elements.get('#sms-meta-store').events.change();
+  assert.match(elements.get('#sms-meta-table').html,/<td>150<\/td>/);
   assert.equal(elements.get('#sms-meta-rate').textContent,'66.7%');
+  assert.match(elements.get('#sms-meta-completeness').textContent,/單店 Meta 預算取自「Meta月度KPI」G 欄/);
   assert.match(elements.get('#sms-budget-total').html,/7200</);
   assert.equal(elements.get('#sms-new-mode').value,'monthly');
   assert.equal(elements.get('#sms-new-store').value,'ty');

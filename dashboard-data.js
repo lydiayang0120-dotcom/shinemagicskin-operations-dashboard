@@ -18,7 +18,10 @@
     return rows.filter(row => row.some(value => value !== null && value !== '')).map(row => Object.fromEntries(header.map((key, i) => [key, row[i] ?? null])));
   }
   const selected = row => row['品牌代碼'] === 'MS' && Number(row['年度歸屬']) === 2026;
+  const storeCodes = ['ty','jc'];
   const storeCode = value => value === '桃園愛美肌' ? 'ty' : value === '江翠愛美肌' ? 'jc' : null;
+  const metaCodes = [...storeCodes,'brand'];
+  const metaCode = value => storeCode(value) || (value === '品牌整體' ? 'brand' : null);
   function monthIndex(row, field) {
     const index = required(row[field]) - 1;
     if (!Number.isInteger(index) || index < 0 || index >= months.length) throw new Error('年度月序不正確。');
@@ -56,11 +59,12 @@
     return result;
   }
   const missingMeta = () => ({s:null,ms:null,q:null,b:null,partial:true});
+  const emptyBrandMeta = () => ({s:0,ms:0,q:0,b:null,partial:false});
   function parseMetaRows(values) {
     const grouped = new Map();
     for (const row of records(values, ['月份','品牌代碼','年度歸屬','月序','分店','實際花費','訊息花費','Meta詢問數','Meta預算','資料完整性','查詢備註'])) {
       if (!selected(row)) continue;
-      const key = storeCode(row['分店']);
+      const key = metaCode(row['分店']);
       if (!key) throw new Error('Meta 工作表出現未設定的分店。');
       // Existing pending rows contain placeholder zeroes; keep those unknown.
       const pending = String(row['查詢備註'] || '').includes('該分店資料待補') || /待補|待匯入/.test(row['資料完整性'] || '');
@@ -71,7 +75,10 @@
       if (value.ms !== null && value.s !== null && value.ms > value.s) throw new Error('訊息花費大於全部花費，請核對來源。');
       add(grouped, monthIndex(row, '月序'), key, value);
     }
-    return sorted(grouped).map(row => ({...row, ty:row.ty || missingMeta(), jc:row.jc || missingMeta()}));
+    return sorted(grouped).map(row => ({
+      ...row,
+      ...Object.fromEntries(metaCodes.map(code => [code,row[code] || (code === 'brand' ? emptyBrandMeta() : missingMeta())]))
+    }));
   }
   function parseBudgetRows(values) {
     const grouped = new Map();
@@ -88,9 +95,10 @@
     return result;
   }
   const sumKnown = values => values.every(value => value === null) ? null : values.reduce((total, value) => total + (value ?? 0), 0);
-  const stores = (row, store) => store === 'all' ? [row.ty, row.jc] : [row[store]];
+  const stores = (row, store) => store === 'all' ? storeCodes.map(code => row[code]) : [row[store]];
+  const metaStores = (row, store) => store === 'all' ? metaCodes.map(code => row[code]) : [row[store]];
   function metaTotal(rows, store) {
-    const list = rows.flatMap(row => stores(row, store));
+    const list = rows.flatMap(row => metaStores(row, store));
     const pairs = list.filter(item => item.s !== null && item.b !== null);
     const messages = list.filter(item => item.ms !== null && item.q !== null);
     const result = Object.fromEntries(['s','ms','q','b'].map(key => [key, sumKnown(list.map(item => item[key]))]));
@@ -98,8 +106,10 @@
     result.status = result.s === null ? '待補' : result.partial ? '部分資料' : '已確認';
     const q = sumKnown(messages.map(item => item.q));
     result.cpa = q > 0 ? sumKnown(messages.map(item => item.ms)) / q : null;
+    const budgetMissing = store !== 'all' && list.some(item => item.b === null);
     const budget = sumKnown(pairs.map(item => item.b));
-    result.rate = budget > 0 ? sumKnown(pairs.map(item => item.s)) / budget : null;
+    result.b = budgetMissing ? null : result.b;
+    result.rate = !budgetMissing && budget > 0 ? sumKnown(pairs.map(item => item.s)) / budget : null;
     return result;
   }
   function budgetAggregate(row, type) {
@@ -189,7 +199,7 @@
     }
     return {newRows, metaRows, budgetRows, consumptionRows};
   }
-  const api = {months,number,parseNewRows,parseMetaRows,parseBudgetRows,parseAll,metaTotal,budgetAggregate,parseConsumptionRows,consumptionTotal};
+  const api = {months,number,storeCodes,metaCodes,parseNewRows,parseMetaRows,parseBudgetRows,parseAll,metaTotal,budgetAggregate,parseConsumptionRows,consumptionTotal};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else host.SMSData = Object.freeze(api);
 })(typeof window !== 'undefined' ? window : globalThis);

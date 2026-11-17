@@ -121,7 +121,7 @@ test('UI login, refresh, four panels, consumption filters and logout',async()=>{
   for(const [id,value] of [['new-mode','cumulative'],['new-store','all'],['new-month',''],['meta-store','all'],['meta-month',''],['budget-type','all'],['budget-month',''],['consumption-mode','cumulative'],['consumption-cohort','new'],['consumption-store','all'],['consumption-month','']]) el('sms-'+id,'SELECT',value);
   let oauth,reads=0,fetchGate=null,failNext=false,nextBudget=120;
   const google={accounts:{oauth2:{initTokenClient(opts){oauth=opts;return {requestAccessToken(){}};}}}};
-  const window={SMSData:data,SMS_CONFIG:{sheetId:'synthetic',googleClientId:'synthetic'},google,setInterval:fn=>{intervals.push(fn);return intervals.length;},clearInterval(){},setTimeout(){return 1;},clearTimeout(){},addEventListener(){}};
+  const window={SMSData:data,SMS_CONFIG:{sheetId:'synthetic',googleClientId:'synthetic'},google,setInterval:fn=>{intervals.push(fn);return intervals.length;},clearInterval(){},setTimeout(){return 1;},clearTimeout(){},addEventListener(){},dispatchEvent(){}};
   const fetch=async()=>{
     reads++;
     if(fetchGate) await fetchGate;
@@ -129,7 +129,7 @@ test('UI login, refresh, four panels, consumption filters and logout',async()=>{
     const raw=fixtures();raw[1].forEach(row=>row['Meta預算']=row['分店']==='品牌整體'?null:nextBudget);
     return {ok:true,json:async()=>({valueRanges:ranges(raw)})};
   };
-  vm.runInNewContext(fs.readFileSync(__dirname+'/dashboard.js','utf8'),{window,document:doc,google,fetch,AbortSignal,Date,console});
+  vm.runInNewContext(fs.readFileSync(__dirname+'/dashboard.js','utf8'),{window,document:doc,google,fetch,AbortSignal,Date,console,CustomEvent:class{constructor(type){this.type=type;}}});
   assert.equal(root.hidden,true);assert.equal(reads,0);
   intervals[0]();oauth.callback({access_token:'synthetic-token',expires_in:3600});
   await new Promise(resolve=>setImmediate(resolve));
@@ -223,3 +223,4 @@ test('consumption accepts Sheet serial dates, excludes other fiscal years, and b
   assert.equal(data.parseConsumptionRows(table(raw[3]),table(raw[4])).length,2);
   assert.throws(()=>data.parseConsumptionRows(table(raw[3]),Array(401).fill([])),/上限/);
 });
+
